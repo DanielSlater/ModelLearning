@@ -99,3 +99,10 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# pycharm
+.idea/
+
+# data, files may be large
+scripts/data/
+data/
