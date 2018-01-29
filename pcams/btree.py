@@ -33,6 +33,10 @@ class BTreeNode(object):
         self._max_vector.setflags(write=False)
         self._center_vector.setflags(write=False)
 
+    @property
+    def population_size(self):
+        return len(self._population)
+
     def __str__(self):
         return "[BTreeNode{}]".format(self.__repr__())
 
@@ -143,7 +147,6 @@ class BTreeNode(object):
                     adj_list.add(self._child_low)
                     self._child_low._adjacents[direction].add(adj)
 
-
     def _child_with_position(self, position):
         return self._child_low if position[self._split_dimension] < self._split_value else self._child_high
 
@@ -165,15 +168,38 @@ class BTreeNode(object):
         else:
             yield self._population
 
-    def get_similar(self, position, size, search_range, comparitor=mean_squared_error):
+    def get_similar(self, position, size, distance_func=mean_squared_error):
+        """
+
+        Args:
+            position (np.array):
+            size (int): How many similar items to return
+            distance_func (a,b -> float): method to get the distance between the position of 2 items, input is the position not the item
+
+        Returns:
+
+        """
         assert size > 0
-        assert search_range > 0
+        assert len(position) == self.dimensions
+        assert isinstance(position, np.ndarray)
 
-        half_range = search_range * .5
-        min = position - half_range
-        max = position + half_range
+        leaf = self.get_leaf(position)
 
-        return get_similar_states(position, chain(*self._get_populations_intersecting_box(min, max)), size, comparitor)
+        nodes = {leaf}
+        outer_nodes = {leaf}
+
+        while outer_nodes and sum(node.population_size for node in nodes) < size * 1.5:
+            # this 1.5 number is a bad hack todo, find a better way to do it (A star and progressive sorting)
+            for outer_node in list(outer_nodes):
+                outer_nodes.remove(outer_node)
+
+                for adj in outer_node.get_adjacents():
+                    if adj not in nodes:
+                        nodes.add(adj)
+                        outer_nodes.add(adj)
+
+        return ((position, item) for similarity, position, item in
+                get_similar_states(position, chain(*(node._population for node in nodes)), size, distance_func))
 
     def get_leaves(self):
         if self.has_children:
@@ -181,6 +207,11 @@ class BTreeNode(object):
                 yield leaf
         else:
             yield self
+
+    def get_population(self):
+        for leaf in self.get_leaves():
+            for item in leaf._population:
+                yield item
 
     def get_adjacents(self):
         return chain(*self._adjacents.itervalues())

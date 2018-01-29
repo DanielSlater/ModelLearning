@@ -19,6 +19,16 @@ def test_btree_25():
 
     assert count(node.get_leaves()) == 5 * 5
 
+    similarities = list(node.get_similar(np.array([3., 3.]), 7))
+    items = set(item for _, item in similarities)
+    assert '33' in items
+    assert '44' in items
+    assert '22' in items
+    assert '43' in items
+    assert '34' in items
+    assert '23' in items
+    assert '32' in items
+
 
 def test_btree():
     node = BTreeNode.create_root(2, 1)
