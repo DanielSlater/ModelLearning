@@ -9,41 +9,41 @@ def one_hot(index, size):
     return array
 
 
-def train_one_iteration(observations, train_func, batch_size):
+def train_one_iteration(observations, train_func, batch_size, shuffle=True):
     cost = 0.
-    random.shuffle(observations)
+    if shuffle:
+        random.shuffle(observations)
     for i in xrange(0, len(observations), batch_size):
         batch = observations[i:i + batch_size]
 
-        cost += train_func((x.last_state for x in batch),
-                           (x.last_action for x in batch),
-                           (x.next_state for x in batch),
-                           (x.reward for x in batch),
-                           (x.terminal for x in batch))
+        cost += train_func(batch)
 
     return cost
 
 
-# TODO: test set?
-def train_till_convergence(observations, train_func, max_continues=2, max_epochs=1000, batch_size=100):
-    best_cost = 100000000.
+def train_till_convergence(train, train_func, test=None, eval_func=None, max_continues=2, max_epochs=3000, batch_size=100):
+    best_cost = float("inf")
     continues = 0
-    first = True
+
+    if test:
+        assert eval_func
 
     for epochs in range(max_epochs):
-        cost = train_one_iteration(observations, train_func, batch_size=batch_size)
+        train_cost = train_one_iteration(train, train_func, batch_size=batch_size)
 
-        if first:
-            print("first cost:", cost / len(observations))
-            first = False
+        if test:
+            test_cost = train_one_iteration(train, eval_func, batch_size=batch_size, shuffle=False)
+            print("Epoch:", epochs, " train cost:", train_cost, " test cost:", test_cost)
+        else:
+            test_cost = train_cost
+            print("Epoch:", epochs, " train cost:", train_cost)
 
-        if cost < best_cost:
-            best_cost = cost
+        if test_cost < best_cost:
+            best_cost = test_cost
             continues = 0
         elif continues >= max_continues:
             break
         else:
             continues += 1
 
-    print("Epochs ", epochs, " last cost:", cost / len(observations))
-    return cost
+    return train_cost

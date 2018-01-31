@@ -4,8 +4,29 @@ from collections import deque
 from collections import namedtuple
 
 from model.common import one_hot
+from pcams.encoder import EncoderInterface
 
 Observation = namedtuple('Observation', ['last_state', 'last_action', 'next_state', 'reward', 'terminal'])
+
+
+class ObservationLastStateEncoder(EncoderInterface):
+    def __init__(self, observation):
+        """
+
+        Args:
+            observation (Observation):
+        """
+        self._sample_observation = observation
+
+    def encode_batch(self, items):
+        return (item.last_state for item in items)
+
+    def train(self, items):
+        pass
+
+    @property
+    def encoded_dimensions(self):
+        return len(self._sample_observation.last_state)
 
 
 class GymWrapper(object):
