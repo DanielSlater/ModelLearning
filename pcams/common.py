@@ -1,3 +1,8 @@
+from itertools import chain
+
+import numpy as np
+
+
 def mean_squared_error(a, b):
     return ((a - b) ** 2).sum()
 
@@ -71,3 +76,4 @@ def get_similar_states(position, position_data_pairs, size, distance_func):
 
 def count(iterator):
     return sum(1 for _ in iterator)
+

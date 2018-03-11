@@ -19,8 +19,12 @@ def test_btree_25():
 
     assert count(node.get_leaves()) == 5 * 5
 
-    similarities = list(node.get_similar(np.array([3., 3.]), 7))
-    items = set(item for _, item in similarities)
+    for leaf in node.get_leaves():
+        for adj in leaf.get_adjacents():
+            assert adj.is_leaf
+
+    similarities = list(node.get_similar(np.array([3., 3.]), 9))
+    items = set(item for _, _, item in similarities)
     assert '33' in items
     assert '44' in items
     assert '22' in items
@@ -28,6 +32,7 @@ def test_btree_25():
     assert '34' in items
     assert '23' in items
     assert '32' in items
+    assert '13' not in items
 
 
 def test_btree():

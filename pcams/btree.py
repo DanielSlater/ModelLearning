@@ -1,10 +1,12 @@
+import heapq
+import sys
 from collections import defaultdict
+from collections import deque
 from itertools import chain
 
 import numpy as np
-import sys
 
-from pcams.common import MAX_DIMENSIONS, combinations_between_bool_vectors, mean_squared_error, get_similar_states, count
+from pcams.common import MAX_DIMENSIONS, combinations_between_bool_vectors, mean_squared_error, count
 
 
 class BTreeNode(object):
@@ -15,7 +17,7 @@ class BTreeNode(object):
         if min_vector is not None:
             assert isinstance(min_vector, np.ndarray)
             assert isinstance(max_vector, np.ndarray)
-            assert all(min_ is None or max_ is None or min_ < max_ for min_, max_ in zip(min_vector, max_vector))
+            assert all(min_ < max_ for min_, max_ in zip(min_vector, max_vector))
 
         self._capacity = capacity
         self._center_vector = center_vector
@@ -26,8 +28,8 @@ class BTreeNode(object):
         self._population = []
         self._parent = parent
         self._adjacents = defaultdict(set)
-        self._min_vector = min_vector if min_vector is not None else np.array([None for _ in xrange(self.dimensions)])
-        self._max_vector = max_vector if max_vector is not None else np.array([None for _ in xrange(self.dimensions)])
+        self._min_vector = min_vector if min_vector is not None else np.array([-sys.float_info.max for _ in xrange(self.dimensions)])
+        self._max_vector = max_vector if max_vector is not None else np.array([sys.float_info.max for _ in xrange(self.dimensions)])
 
         self._min_vector.setflags(write=False)
         self._max_vector.setflags(write=False)
@@ -168,6 +170,13 @@ class BTreeNode(object):
         else:
             yield self._population
 
+    def distance_to_furthest_edge(self, position, distance_func):
+        return distance_func(np.zeros(len(position)), np.amax([position - self._min_vector, self._max_vector - position], axis=0))
+
+    def distance_to_nearest_edge(self, position, distance_func):
+        zero_vec = np.zeros(len(position))
+        return distance_func(zero_vec, np.amax([self._min_vector - position, zero_vec, position - self._max_vector], axis=0))
+
     def get_similar(self, position, size, distance_func=mean_squared_error):
         """
 
@@ -183,23 +192,77 @@ class BTreeNode(object):
         assert len(position) == self.dimensions
         assert isinstance(position, np.ndarray)
 
-        leaf = self.get_leaf(position)
+        furthest_in_result = float("inf")
+        result = []
+        to_send = size
 
-        nodes = {leaf}
-        outer_nodes = {leaf}
+        for distance, leaf in self.get_leaves_ordered_by_distance(position, size, distance_func=distance_func):
+            # yield everything closer than the distance to the next leaf
+            if result:
+                while heapq.nsmallest(1, result)[0][0] < distance:
+                    to_send -= 1
+                    yield heapq.heappop(result)  # yield smallest
+                    if to_send == 0:
+                        return
+                    if not result:
+                        break
 
-        while outer_nodes and sum(node.population_size for node in nodes) < size * 1.5:
-            # this 1.5 number is a bad hack todo, find a better way to do it (A star and progressive sorting)
-            for outer_node in list(outer_nodes):
-                outer_nodes.remove(outer_node)
+                if len(result) >= size:
+                    furthest_in_result, _, _ = heapq.nlargest(1, result)[0]
 
-                for adj in outer_node.get_adjacents():
-                    if adj not in nodes:
-                        nodes.add(adj)
-                        outer_nodes.add(adj)
+            if not leaf.is_leaf:
+                assert leaf.is_leaf
 
-        return ((position, item) for similarity, position, item in
-                get_similar_states(position, chain(*(node._population for node in nodes)), size, distance_func))
+            for data_position, data in leaf._population:
+                data_distance = distance_func(position, data_position)
+                if data_distance < furthest_in_result:
+                    heapq.heappush(result, (data_distance, data_position, data))
+
+    def get_leaves_in_radius(self, position, radius, distance_func):
+        for distance, leaf in self._get_leaves_ordered_by_distance(position, radius, distance_func):
+            yield distance, leaf
+
+    def _get_leaves_in_radius(self, position, radius, distance_func, visited_set=None):
+        visited_set = visited_set or set()
+        outer_set = deque((self,))
+
+        while outer_set:
+            next_leaf = outer_set.popleft()
+            for adj in next_leaf:
+                if adj not in visited_set:
+                    visited_set.add(adj)
+                    distance = adj.distance_to_nearest_edge(position, distance_func)
+
+                    if distance < radius:
+                        outer_set.append(visited_set)
+                        yield distance, adj
+
+    def get_leaves_ordered_by_distance(self, position, max_distance, distance_func):
+        if not self.is_leaf:
+            leaf = self.get_leaf(position)
+        else:
+            leaf = self
+
+        for distance, item in leaf._get_leaves_ordered_by_distance(position, max_distance, distance_func):
+            yield distance, item
+
+    def _get_leaves_ordered_by_distance(self, position, max_distance, distance_func):
+        visited_set = {self}
+        outer_queue = []
+        heapq.heappush(outer_queue, (0, self))
+
+        while outer_queue:
+            distance, item = heapq.heappop(outer_queue)
+            yield distance, item
+
+            for adj in item.get_adjacents():
+                if adj not in visited_set:
+                    visited_set.add(adj)
+
+                    new_distance = adj.distance_to_nearest_edge(position, distance_func)
+
+                    if new_distance <= max_distance:
+                        heapq.heappush(outer_queue, (new_distance, adj))
 
     def get_leaves(self):
         if self.has_children:
